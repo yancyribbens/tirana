@@ -1,50 +1,34 @@
-use std::time::{SystemTime};
-use std::io::Write;
+use tokio::net::TcpStream;
+use tokio::io::AsyncWriteExt;
+use std::error::Error;
+use std::io;
+use std::str;
 
-use std::io::prelude::*;
-use std::io::BufReader;
-use std::net::TcpStream;
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
+	let mut stream: TcpStream = TcpStream::connect("irc.libera.chat:6665").await.unwrap();
+	stream.write(b"NICK test31415\n").await.unwrap();
+	stream.write(b"USER test31415 0 * :Ronnie Reagan\n").await.unwrap();
 
-//fn prompt(name: &str) -> String {
-    //let mut line = String::new();
-    //print!("{}", name);
-    //std::io::stdout().flush().unwrap();
-    //std::io::stdin().read_line(&mut line).expect("Error: Could not read a line");
-    //return line.trim().to_string()
-//}
+	loop {
+		stream.readable().await?;
 
-fn read_line() -> String {
-    let prompt = "> ";
-    print!("{}", prompt);
+		let mut buf = Vec::with_capacity(4096);
 
-    std::io::stdout().flush().unwrap();
+        match stream.try_read_buf(&mut buf) {
+			Ok(0) => break,
+			Ok(n) => {
+				let msg = str::from_utf8(&buf).unwrap();
+				println!("read {}", msg);
+			}
+			Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+				continue;
+			}
+			Err(e) => {
+				return Err(e.into());
+			}
+		}
+	}
 
-    let mut line = String::new();
-    std::io::stdin().read_line(&mut line).expect("Error: Could not read a line");
-    return line.trim().to_string()
-}
-
-fn main() -> std::io::Result<()> {
-    let mut stream = TcpStream::connect("irc.libera.chat:6665")?;
-
-    let nick = "NICK test31415\n".as_bytes();
-    let user = "USER test31415 0 * :Ronnie Reagan\n".as_bytes();
-
-    stream.write(nick)?;
-    stream.write(user)?;
-
-    let mut reader = BufReader::new(&stream);
-    let mut line = String::new();
-
-    loop {
-      let len = reader.read_line(&mut line)?;
-
-      if len > 0 {
-        println!("{}", line);
-      }
-    }
-    //stream.read(&mut buffer)?;
-    //println!("{:?}", buffer);
-
-    Ok(())
+	Ok(())
 }
