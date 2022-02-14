@@ -12,7 +12,7 @@ use tokio_stream::StreamExt;
 use tokio_util::codec::{BytesCodec, Decoder};
 use futures::join;
 
-async fn handle_inbound(write_half: WriteHalf<'_>) -> Result<(), Box<dyn Error>> {
+async fn handle_inbound(mut write_half: WriteHalf<'_>) -> Result<(), Box<dyn Error>> {
     let listener = TcpListener::bind("127.0.0.1:31415").await?;
 
     loop {
@@ -21,7 +21,7 @@ async fn handle_inbound(write_half: WriteHalf<'_>) -> Result<(), Box<dyn Error>>
 
         while let Some(message) = framed.next().await {
             match message {
-                Ok(bytes) => println!("bytes: {:?}", bytes),
+                Ok(bytes) => { write_half.write(&bytes).await.unwrap(); println!("bytes: {:?}", bytes) },
                 Err(err) => println!("Socket closed with error: {:?}", err),
             }
         }
@@ -59,7 +59,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let (mut read_half, mut write_half) = stream.split();
     write_half.write(b"NICK test31415\n").await.unwrap();
     write_half.write(b"USER test31415 0 * :Ronnie Reagan\n").await.unwrap();
-
     let h1 = handle_inbound(write_half);
     let h2 = irc_stdout(read_half);
 
