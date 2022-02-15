@@ -10,3 +10,4 @@ futures = "0.3"
 tokio = { version = "1.0.0", features = ["full", "tracing"] }
 tokio-util = { version = "0.7.0",  features = ["full"] }
 tokio-stream = { version = "0.1" }
+irc-proto = { version = "0.14.0" }
