@@ -65,14 +65,14 @@ fn process_buf(buf: &Vec<u8>) {
     println!("{}", irc_message);
 }
 
-async fn irc_stdout() {
-    let mut stream: TcpStream = TcpStream::connect("irc.libera.chat:6665").await.unwrap();
+async fn irc_stdout() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let mut stream: TcpStream = TcpStream::connect("irc.libera.chat:6665").await?;
 
-    stream.write_all(b"NICK test31415\n").await.unwrap();
-    stream.write_all(b"USER test31415 0 * :Ronnie Reagan\n").await.unwrap();
+    stream.write_all(b"NICK test31415\n").await?;
+    stream.write_all(b"USER test31415 0 * :Ronnie Reagan\n").await?;
 
     loop {
-        stream.readable().await.expect("oops");
+        stream.readable().await?;
 
         let mut buf = Vec::with_capacity(4096);
 
@@ -87,6 +87,8 @@ async fn irc_stdout() {
             }
         }
     }
+
+    Ok(())
 }
 
 #[tokio::main]
