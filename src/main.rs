@@ -21,18 +21,22 @@ use irc_proto::{
     command::*,
 };
 
-type conduit = Arc<Mutex<HashMap<String, Bytes>>>;
+type SharedMessages = Arc<Mutex<Vec<String>>>;
 
-async fn handle_inbound(mut write_half: WriteHalf<'_>) -> Result<(), Box<dyn Error>> {
+async fn listener() -> Result<(), Box<dyn Error + Send + Sync>> {
+
     let listener = TcpListener::bind("127.0.0.1:31415").await?;
 
     loop {
+        //let messages = shared_messages.lock().unwrap();
+        //println!("messages length: {}", messages.len());
+
         let (socket, _) = listener.accept().await?;
         let mut framed = BytesCodec::new().framed(socket);
 
         while let Some(message) = framed.next().await {
             match message {
-                Ok(bytes) => { write_half.write(&bytes).await.unwrap(); println!("bytes: {:?}", bytes) },
+                Ok(bytes) => { println!("bytes: {:?}", bytes) },
                 Err(err) => println!("Socket closed with error: {:?}", err),
             }
         }
@@ -42,28 +46,37 @@ async fn handle_inbound(mut write_half: WriteHalf<'_>) -> Result<(), Box<dyn Err
 }
 
 fn process_buf(buf: &Vec<u8>) {
-	let msg_str = str::from_utf8(&buf).unwrap();
-	let irc_message = msg_str.parse::<Message>().unwrap();
-	match irc_message.command {
-		Command::PING(ref server, ref _server_two) => {
-			println!("PING: {}", server);
-			//let cmd = Command::new("PONG", vec![server]).unwrap();
-			//let irc_message = format!(
-				//"{}\n", IrcMessage::from(cmd).to_string());
-		},
-		_ => println!("{}", irc_message),
-	}
+    let msg_str = str::from_utf8(&buf).unwrap();
+    let irc_message = msg_str.parse::<Message>().unwrap();
+    println!("{}", irc_message);
 
-	println!("{}", irc_message);
+    match irc_message.command {
+        Command::PING(ref server, ref _server_two) => {
+            println!("got a ping");
+            let cmd = Command::new("PONG", vec![server]).unwrap();
+            let irc_message = format!(
+                "{}\n", Message::from(cmd).to_string());
+            //let mut shared_messages = shared_messages.lock().unwrap();
+            //shared_messages.push(irc_message);
+        },
+        _ => println!("{}", irc_message),
+    }
+
+    println!("{}", irc_message);
 }
 
-async fn irc_stdout(read_half: ReadHalf<'_>) {
+async fn irc_stdout() {
+    let mut stream: TcpStream = TcpStream::connect("irc.libera.chat:6665").await.unwrap();
+
+    stream.write_all(b"NICK test31415\n").await.unwrap();
+    stream.write_all(b"USER test31415 0 * :Ronnie Reagan\n").await.unwrap();
+
     loop {
-        read_half.readable().await.expect("oops");
+        stream.readable().await.expect("oops");
 
         let mut buf = Vec::with_capacity(4096);
 
-        match read_half.try_read_buf(&mut buf) {
+        match stream.try_read_buf(&mut buf) {
             Ok(0) => break,
             Ok(n) => process_buf(&buf),
             Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
@@ -71,7 +84,6 @@ async fn irc_stdout(read_half: ReadHalf<'_>) {
             }
             Err(e) => {
                 ()
-                //return Err(e.into());
             }
         }
     }
@@ -79,14 +91,22 @@ async fn irc_stdout(read_half: ReadHalf<'_>) {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let mut stream: TcpStream = TcpStream::connect("irc.libera.chat:6665").await.unwrap();
-    let (mut read_half, mut write_half) = stream.split();
-    write_half.write(b"NICK test31415\n").await.unwrap();
-    write_half.write(b"USER test31415 0 * :Ronnie Reagan\n").await.unwrap();
-    let h1 = handle_inbound(write_half);
-    let h2 = irc_stdout(read_half);
+    //let shared_messages = Arc::new(Mutex::new(Vec::new()));
+    //let shared_messages0 = shared_messages.clone();
 
-    join!(h1, h2);
+    let h1 = tokio::spawn(async move {
+        listener().await
+    });
+
+    let h2 = tokio::spawn(async move {
+        irc_stdout().await
+    });
+
+
+    //let h1 = handle_inbound(write_half, shared_messages);
+    //let h2 = irc_stdout(read_half, shared_messages0);
+
+    join!(h1);
 
     Ok(())
 }
