@@ -1,3 +1,5 @@
+use tokio::io::Interest;
+
 use tokio::net::TcpStream;
 use tokio::net::TcpListener;
 use tokio::net::tcp::ReadHalf;
@@ -21,7 +23,11 @@ use irc_proto::{
     command::*,
 };
 
+use tokio::task::yield_now;
+
 type SharedMessages = Arc<Mutex<Vec<String>>>;
+
+const BOTH: Interest = Interest::READABLE.add(Interest::WRITABLE);
 
 async fn listener() -> Result<(), Box<dyn Error + Send + Sync>> {
 
@@ -45,24 +51,25 @@ async fn listener() -> Result<(), Box<dyn Error + Send + Sync>> {
     }
 }
 
-fn process_buf(buf: &Vec<u8>) {
+fn process_buf(buf: &Vec<u8>) -> Option<String> {
     let msg_str = str::from_utf8(&buf).unwrap();
     let irc_message = msg_str.parse::<Message>().unwrap();
-    println!("{}", irc_message);
+    print!("{}", irc_message);
 
+    let mut response = None;
     match irc_message.command {
         Command::PING(ref server, ref _server_two) => {
             println!("got a ping");
             let cmd = Command::new("PONG", vec![server]).unwrap();
             let irc_message = format!(
                 "{}\n", Message::from(cmd).to_string());
-            //let mut shared_messages = shared_messages.lock().unwrap();
-            //shared_messages.push(irc_message);
+            
+            response = Some(irc_message);
         },
-        _ => println!("{}", irc_message),
+        _ => (),
     }
 
-    println!("{}", irc_message);
+    response
 }
 
 async fn irc_stdout() -> Result<(), Box<dyn Error + Send + Sync>> {
@@ -71,14 +78,23 @@ async fn irc_stdout() -> Result<(), Box<dyn Error + Send + Sync>> {
     stream.write_all(b"NICK test31415\n").await?;
     stream.write_all(b"USER test31415 0 * :Ronnie Reagan\n").await?;
 
+    let (mut read_half, mut write_half) = stream.split();
+
     loop {
-        stream.readable().await?;
+        read_half.readable().await?;
 
         let mut buf = Vec::with_capacity(4096);
 
-        match stream.try_read_buf(&mut buf) {
+        match read_half.try_read_buf(&mut buf) {
             Ok(0) => break,
-            Ok(n) => process_buf(&buf),
+            Ok(n) => {
+                let response = process_buf(&buf);
+
+                if let Some(response) = response {
+                    println!("writing pong");
+                    write_half.try_write(response.as_bytes());
+                }
+            }
             Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
                 continue;
             }
