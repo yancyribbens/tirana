@@ -23,6 +23,8 @@ use std::sync::mpsc::Receiver;
 use tokio::net::tcp::OwnedReadHalf;
 use tokio::net::tcp::OwnedWriteHalf;
 
+use std::env;
+
 async fn listener(tx: SyncSender<String>) -> Result<(), Box<dyn Error + Send + Sync>> {
     let listener = TcpListener::bind("127.0.0.1:31415").await?;
 
@@ -49,7 +51,6 @@ fn process_buf(buf: &Vec<u8>) -> Option<String> {
     let mut response = None;
     match irc_message.command {
         Command::PING(ref server, ref _server_two) => {
-            println!("got a ping");
             let cmd = Command::new("PONG", vec![server]).unwrap();
             let irc_message = format!(
                 "{}\n", Message::from(cmd).to_string());
@@ -67,11 +68,9 @@ async fn irc_writer(rx: Receiver<String>, mut writer: OwnedWriteHalf) -> Result<
 
     loop {
         let val = rx.recv().unwrap();
-        println!("read from channel: {}", val);
         writer.write_all(val.as_str().as_bytes());
-        println!("done writing from channel to irc");
         match writer.try_write(val.as_str().as_bytes()) {
-            Ok(n) => { println!("done writing response"); }
+            Ok(n) => { (); }
             Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
                 println!("blocked");
                 continue;
@@ -118,9 +117,32 @@ async fn irc_reader(tx: SyncSender<String>, reader: OwnedReadHalf) -> Result<(),
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
+	let nick_arg = env::args()
+		.nth(1)
+		.unwrap();
+
+	let user_arg = env::args()
+		.nth(2)
+		.unwrap();
+
+	let mode_arg = env::args()
+		.nth(3)
+		.unwrap();
+
+	let real_arg = env::args()
+		.nth(4)
+		.unwrap();
+
+	let pass_arg = env::args()
+		.nth(5);
+
+	let connection = match pass_arg {
+		Some(pass) => format!("PASS {}\nNICK {}\nUSER {} {} * :{}\n", pass, nick_arg, user_arg, mode_arg, real_arg),
+		None => format!("NICK {}\nUSER {} {} * :{}\n", nick_arg, user_arg, mode_arg, real_arg),
+	};
+	
     let mut stream: TcpStream = TcpStream::connect("irc.libera.chat:6665").await?;
-    stream.write_all(b"NICK test31415\n").await?;
-    stream.write_all(b"USER test31415 0 * :Ronnie Reagan\n").await?;
+	stream.write_all(connection.as_bytes()).await?;
 
     let (read_half, write_half) = stream.into_split();
 
@@ -140,5 +162,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     });
 
     let (_listener, _irc_reader, _irc_writer) = join!(listener_handle, irc_reader_handle, irc_writer_handle);
+
     Ok(())
 }
