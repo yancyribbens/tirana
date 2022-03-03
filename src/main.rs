@@ -15,7 +15,6 @@ use irc_proto::{
     command::*,
 };
 
-use std::thread;
 use std::sync::mpsc::sync_channel;
 use std::sync::mpsc::SyncSender;
 use std::sync::mpsc::Receiver;
@@ -34,7 +33,7 @@ async fn listener(tx: SyncSender<String>) -> Result<(), Box<dyn Error + Send + S
 
         while let Some(message) = framed.next().await {
             match message {
-                Ok(ref bytes) => { tx.send(str::from_utf8(&message.unwrap()).unwrap().to_string()); () },
+                Ok(ref _bytes) => { let _res = tx.send(str::from_utf8(&message.unwrap()).unwrap().to_string()); () },
                 Err(err) => println!("Socket closed with error: {:?}", err),
             }
         }
@@ -46,7 +45,6 @@ async fn listener(tx: SyncSender<String>) -> Result<(), Box<dyn Error + Send + S
 fn process_buf(buf: &Vec<u8>) -> Option<String> {
     let msg_str = str::from_utf8(&buf).unwrap();
     let irc_message = msg_str.parse::<Message>().unwrap();
-    print!("{}", irc_message);
 
     let mut response = None;
     match irc_message.command {
@@ -57,20 +55,18 @@ fn process_buf(buf: &Vec<u8>) -> Option<String> {
             
             response = Some(irc_message);
         },
-        _ => (),
+        _ => print!("{}", irc_message),
     }
 
     response
 }
 
 async fn irc_writer(rx: Receiver<String>, mut writer: OwnedWriteHalf) -> Result<(), Box<dyn Error + Send + Sync>> {
-    println!("start writer thread");
-
     loop {
         let val = rx.recv().unwrap();
-        writer.write_all(val.as_str().as_bytes());
+        let _res = writer.write_all(val.as_str().as_bytes());
         match writer.try_write(val.as_str().as_bytes()) {
-            Ok(n) => { (); }
+            Ok(_n) => { (); }
             Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
                 println!("blocked");
                 continue;
@@ -81,10 +77,6 @@ async fn irc_writer(rx: Receiver<String>, mut writer: OwnedWriteHalf) -> Result<
             }
         }
     }
-
-    println!("irc_writer done");
-
-    Ok(())
 }
 
 async fn irc_reader(tx: SyncSender<String>, reader: OwnedReadHalf) -> Result<(), Box<dyn Error + Send + Sync>> {
@@ -99,8 +91,7 @@ async fn irc_reader(tx: SyncSender<String>, reader: OwnedReadHalf) -> Result<(),
                 let response = process_buf(&buf);
 
                 if let Some(response) = response {
-                    let a = response.clone();
-                    tx.send(response);
+                    let _res = tx.send(response);
                 }
             }
             Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
@@ -117,6 +108,8 @@ async fn irc_reader(tx: SyncSender<String>, reader: OwnedReadHalf) -> Result<(),
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
+	println!("starting application");
+
 	let nick_arg = env::args()
 		.nth(1)
 		.unwrap();
@@ -141,8 +134,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
 		None => format!("NICK {}\nUSER {} {} * :{}\n", nick_arg, user_arg, mode_arg, real_arg),
 	};
 	
+	println!("done creating connection string");
     let mut stream: TcpStream = TcpStream::connect("irc.libera.chat:6665").await?;
 	stream.write_all(connection.as_bytes()).await?;
+
+	println!("connection string sent");
 
     let (read_half, write_half) = stream.into_split();
 
