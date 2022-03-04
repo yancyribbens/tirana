@@ -80,7 +80,6 @@ fn process_buf(buf: &Vec<u8>) -> Option<String> {
 async fn irc_writer(mut rx: Receiver<String>, mut writer: OwnedWriteHalf) -> Result<(), Box<dyn Error + Send + Sync>> {
     loop {
         while let Some(val) = rx.recv().await {
-            println!("writing to irc: {}", val);
             let bytes = val.as_str().as_bytes();
             match writer.try_write(bytes) {
                 Ok(_n) => { (); }
