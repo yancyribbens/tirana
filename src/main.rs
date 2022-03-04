@@ -43,7 +43,7 @@ async fn listener(tx: Sender<String>) -> Result<(), Box<dyn Error + Send + Sync>
                     let msg = message.unwrap();
                     let utf8_message = str::from_utf8(&msg).unwrap();
                     let message_string = String::from(utf8_message);
-                    //println!("{:?}", message_string);
+                    println!("{:?}", message_string);
 
                     if let Err(_) = tx.send(message_string).await {
                         println!("receiver dropped");
@@ -80,7 +80,7 @@ fn process_buf(buf: &Vec<u8>) -> Option<String> {
 async fn irc_writer(mut rx: Receiver<String>, mut writer: OwnedWriteHalf) -> Result<(), Box<dyn Error + Send + Sync>> {
     loop {
         while let Some(val) = rx.recv().await {
-            //println!("writing: {}", val);
+            println!("writing to irc: {}", val);
             let bytes = val.as_str().as_bytes();
             match writer.try_write(bytes) {
                 Ok(_n) => { (); }
@@ -112,8 +112,12 @@ async fn irc_reader(tx: Sender<String>, reader: OwnedReadHalf) -> Result<(), Box
 			Ok(_n) => {
 				let response = process_buf(&buf);
 
+
 				if let Some(response) = response {
-					let _res = tx.send(response);
+                    if let Err(_) = tx.send(response).await {
+                        println!("receiver dropped");
+                        return Ok(());
+                    }
 				}
 			}
 			Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
