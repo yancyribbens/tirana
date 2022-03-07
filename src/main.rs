@@ -1,3 +1,7 @@
+use tokio::io::Interest;
+
+use std::io::BufReader;
+
 use tokio::net::TcpStream;
 use tokio::net::TcpListener;
 
@@ -78,20 +82,12 @@ fn process_buf(buf: &Vec<u8>) -> Option<String> {
 }
 
 async fn irc_writer(mut rx: Receiver<String>, mut writer: OwnedWriteHalf) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let ready = writer.ready(Interest::WRITABLE).await?;
+
     loop {
         while let Some(val) = rx.recv().await {
             let bytes = val.as_str().as_bytes();
-            match writer.try_write(bytes) {
-                Ok(_n) => { (); }
-                Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                    println!("blocked");
-                    continue;
-                }
-                Err(e) => {
-                    println!("err writing");
-                    return Err(e.into());
-                }
-            }
+            let _w = writer.write_all(bytes);
         }
     }
 
@@ -99,36 +95,33 @@ async fn irc_writer(mut rx: Receiver<String>, mut writer: OwnedWriteHalf) -> Res
 }
 
 async fn irc_reader(tx: Sender<String>, reader: OwnedReadHalf) -> Result<(), Box<dyn Error + Send + Sync>> {
-	//println!("start irc reader");
+    //println!("start irc reader");
     
-	loop {
-		reader.readable().await?;
+    loop {
+        reader.readable().await?;
 
-		let mut buf = Vec::with_capacity(4096);
+        let mut buf = Vec::with_capacity(4096);
 
-		match reader.try_read_buf(&mut buf) {
-			Ok(0) => break,
-			Ok(_n) => {
-				let response = process_buf(&buf);
+        match reader.try_read_buf(&mut buf) {
+            Ok(0) => break,
+            Ok(_n) => {
+                let response = process_buf(&buf);
 
-
-				if let Some(response) = response {
+                if let Some(response) = response {
                     if let Err(_) = tx.send(response).await {
                         println!("receiver dropped");
                         return Ok(());
                     }
-				}
-			}
-			Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-				continue;
-			}
-			Err(_e) => {
-				()
-			}
-		}
-	}
+                }
+            },
+            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                continue;
+            },
+            Err(_e) => { () }
+        }
+    }
 
-	Ok(())
+    Ok(())
 }
 
 #[tokio::main]
