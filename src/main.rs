@@ -82,8 +82,6 @@ fn process_buf(buf: &Vec<u8>) -> Option<String> {
 }
 
 async fn irc_writer(mut rx: Receiver<String>, mut writer: OwnedWriteHalf) -> Result<(), Box<dyn Error + Send + Sync>> {
-    let ready = writer.ready(Interest::WRITABLE).await?;
-
     loop {
         while let Some(val) = rx.recv().await {
             let bytes = val.as_str().as_bytes();
